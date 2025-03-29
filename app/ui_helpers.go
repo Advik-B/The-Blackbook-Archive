@@ -5,24 +5,18 @@ import (
 	"io"
 	"log"
 	"net/url"
-	"path/filepath" // Added
-	"strings"       // Added
+	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	// Adjust import paths
-	zlib "The.Blackbook.Archive/zlibrary"
+	zlib "The.Blackbook.Archive/zlibrary" // Adjust import paths
 )
 
 // setStatus updates the status bar label safely.
 func (g *guiApp) setStatus(message string) {
-	// Ensure UI updates run on the Fyne goroutine
-	// No need for separate go func() if called from handlers already on main thread or
-	// if the calling goroutine manages its UI updates correctly.
-	// Fyne handles thread safety internally for widget updates.
 	g.statusBar.SetText(message)
 }
 
@@ -33,9 +27,9 @@ func (g *guiApp) fetchImageResource(imageURL string) (fyne.Resource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("image request failed for %s: %w", imageURL, err)
 	}
-	defer resp.Body.Close() // Ensure body is closed
+	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 { // Use http.StatusOK
+	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to fetch image %s, status: %s", imageURL, resp.Status)
 	}
 
@@ -44,7 +38,7 @@ func (g *guiApp) fetchImageResource(imageURL string) (fyne.Resource, error) {
 		return nil, fmt.Errorf("unexpected content type '%s' for image URL %s", contentType, imageURL)
 	}
 
-	imgBytes, err := io.ReadAll(resp.Body) // Use io.ReadAll
+	imgBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read image data from %s: %w", imageURL, err)
 	}
@@ -52,11 +46,10 @@ func (g *guiApp) fetchImageResource(imageURL string) (fyne.Resource, error) {
 		return nil, fmt.Errorf("downloaded image data is empty for %s", imageURL)
 	}
 
-	// Create a filename hint from the URL path
-	filenameHint := "cover_image" // Default
+	filenameHint := "cover_image"
 	parsedURL, err := url.Parse(imageURL)
 	if err == nil && parsedURL.Path != "" {
-		filenameHint = filepath.Base(parsedURL.Path) // Get the last part of the path
+		filenameHint = filepath.Base(parsedURL.Path)
 	}
 
 	return fyne.NewStaticResource(filenameHint, imgBytes), nil
@@ -70,7 +63,7 @@ func (g *guiApp) clearDetails() {
 		g.coverImage.Refresh()
 	}
 	if g.detailsArea != nil {
-		// Keep the container, just replace objects
+		// Replace content inside the container managed by the scroll view
 		g.detailsArea.Objects = []fyne.CanvasObject{widget.NewLabel("Select a book from the results to see details.")}
 		g.detailsArea.Refresh()
 	}
@@ -85,19 +78,19 @@ func (g *guiApp) clearDetails() {
 		g.progressBar.Hide()
 		g.progressBar.SetValue(0)
 	}
-
 }
 
 // populateDetailsArea fills the details UI elements with book information.
 func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 	if details == nil {
-		g.clearDetails() // Clear if details are nil
+		g.clearDetails()
 		return
 	}
 
-	var widgets []fyne.CanvasObject
+	// Use a slice to collect pairs of widgets for the Form layout
+	formItems := []*widget.FormItem{}
 
-	// Helper to add a detail row (label + value)
+	// Helper to add a detail row (label + value) to the FormItems slice
 	addDetail := func(label string, value *string, isURL ...bool) {
 		if value != nil && *value != "" {
 			var content fyne.CanvasObject
@@ -105,7 +98,6 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 			if len(isURL) > 0 && isURL[0] {
 				parsedURL, err := url.Parse(valStr)
 				if err == nil {
-					// Shorten long URLs for display
 					displayURL := valStr
 					if len(displayURL) > 70 {
 						displayURL = displayURL[:67] + "..."
@@ -113,29 +105,26 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 					content = widget.NewHyperlink(displayURL, parsedURL)
 				} else {
 					log.Printf("Warning: Failed to parse '%s' as URL for label '%s': %v", valStr, label, err)
-					content = widget.NewLabel(valStr) // Fallback to label
+					content = widget.NewLabel(valStr)
+					content.(*widget.Label).Wrapping = fyne.TextWrapWord // Wrap even if it's a fallback URL
 				}
 			} else {
 				content = widget.NewLabel(valStr)
-				content.(*widget.Label).Wrapping = fyne.TextWrapWord
+				content.(*widget.Label).Wrapping = fyne.TextWrapWord // Wrap normal text
 			}
-			// Use a Grid layout for better alignment
-			// widgets = append(widgets, container.NewBorder(nil, nil, widget.NewLabelWithStyle(label+":", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), nil, content))
-			widgets = append(widgets, widget.NewLabelWithStyle(label+":", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-			widgets = append(widgets, content)
+			formItems = append(formItems, widget.NewFormItem(label, content))
 		}
 	}
 
 	// Helper to add a row with a custom widget as the value
 	addDetailRich := func(label string, content fyne.CanvasObject) {
 		if content != nil {
-			// widgets = append(widgets, container.NewBorder(nil, nil, widget.NewLabelWithStyle(label+":", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), nil, content))
-			widgets = append(widgets, widget.NewLabelWithStyle(label+":", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-			widgets = append(widgets, content)
+			formItems = append(formItems, widget.NewFormItem(label, content))
 		}
 	}
 
 	// --- Add details using helpers ---
+	// Use simpler labels for FormItem
 	addDetail("Title", details.Title)
 	addDetail("Author", details.Author)
 	addDetail("Author Link", details.AuthorURL, true)
@@ -143,6 +132,9 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 	if details.Description != nil && *details.Description != "" {
 		descLabel := widget.NewLabel(*details.Description)
 		descLabel.Wrapping = fyne.TextWrapWord
+		// For description, using addDetailRich makes it span both columns of the form, which is better
+		// We'll create the form below, and add description separately if needed, or just use addDetailRich.
+		// Let's use addDetailRich here, it handles the layout internally.
 		addDetailRich("Description", descLabel)
 	}
 
@@ -163,11 +155,13 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 
 	// Categories
 	if len(details.Categories) > 0 {
-		catBox := container.NewVBox()
+		catBox := container.NewVBox() // Use VBox for multiple category links/labels
+		hasContent := false
 		for _, cat := range details.Categories {
 			if cat.Name == "" {
 				continue
-			} // Skip empty category names
+			}
+			hasContent = true
 			if cat.URL != nil && *cat.URL != "" {
 				parsedURL, err := url.Parse(*cat.URL)
 				if err == nil {
@@ -180,7 +174,7 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 				catBox.Add(widget.NewLabel(cat.Name))
 			}
 		}
-		if len(catBox.Objects) > 0 {
+		if hasContent {
 			addDetailRich("Categories", catBox)
 		}
 	}
@@ -192,7 +186,7 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 	}
 	if details.FileSize != nil && *details.FileSize != "" {
 		if fileInfo != "" {
-			fileInfo += " " // Just a space, looks better
+			fileInfo += " "
 		}
 		fileInfo += "(" + *details.FileSize + ")"
 	}
@@ -208,44 +202,40 @@ func (g *guiApp) populateDetailsArea(details *zlib.BookDetails) {
 	addDetail("ISBN 10", details.ISBN10)
 	addDetail("ISBN 13", details.ISBN13)
 	addDetail("Content Type", details.ContentType)
-	addDetail("Book ID", details.BookID) // Can be useful for debugging/reporting
+	addDetail("Book ID", details.BookID)
 	addDetail("IPFS CID", details.IpfsCID)
-	// addDetail("IPFS CID Blake2b", details.IpfsCIDBlake2b) // Often less relevant for user
-	addDetail("Cover URL", details.CoverURL, true)         // Show the URL
-	addDetail("Primary DL URL", details.DownloadURL, true) // Show the URL
+	addDetail("Cover URL", details.CoverURL, true)
+	addDetail("Primary DL URL", details.DownloadURL, true)
 
 	// Other Formats
 	if len(details.OtherFormats) > 0 {
-		otherFmtBox := container.NewVBox()
+		otherFmtBox := container.NewVBox() // Use VBox
+		hasContent := false
 		for _, f := range details.OtherFormats {
 			text := f.Format
 			if text == "" {
-				text = "??"
+				continue // Skip if format name is empty
 			}
+			hasContent = true
 
 			if f.URL == "CONVERSION_NEEDED" {
-				otherFmtBox.Add(widget.NewLabel(fmt.Sprintf("%s (Conversion)", text)))
-			} else if f.URL != "" {
-				// Create a small button or link for other formats? For now, just label.
-				// parsedURL, err := url.Parse(f.URL)
-				// if err == nil {
-				// 	otherFmtBox.Add(widget.NewHyperlink(fmt.Sprintf("%s (%s)", text, f.URL), parsedURL))
-				// } else {
-				otherFmtBox.Add(widget.NewLabel(fmt.Sprintf("%s", text))) // Just show format name
-				// }
+				otherFmtBox.Add(widget.NewLabel(fmt.Sprintf("%s (Conversion Needed)", text)))
 			} else {
-				otherFmtBox.Add(widget.NewLabel(text)) // Should not happen if URL is required unless CONVERSION_NEEDED
+				// Just display the format name for simplicity in the form layout
+				otherFmtBox.Add(widget.NewLabel(fmt.Sprintf("%s", text)))
 			}
 		}
-		if len(otherFmtBox.Objects) > 0 {
+		if hasContent {
 			addDetailRich("Other Formats", otherFmtBox)
 		}
 	}
 
-	// Use a Grid layout with 2 columns for the details
-	grid := container.New(layout.NewFormLayout(), widgets...)
+	// Create the Form using the collected items
+	detailsForm := widget.NewForm(formItems...)
 
-	g.detailsArea.Objects = []fyne.CanvasObject{grid} // Replace content
+	// Replace the content of detailsArea with the new form
+	// Wrap the form in a VBox in case we want to add other things above/below it later easily
+	g.detailsArea.Objects = []fyne.CanvasObject{container.NewVBox(detailsForm)}
 	g.detailsArea.Refresh()
 	g.detailsContainer.ScrollToTop() // Ensure view starts at the top
 }
