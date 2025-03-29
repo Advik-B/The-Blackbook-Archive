@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings" // Added
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 
 	// Adjust import paths
@@ -312,12 +313,12 @@ func (g *guiApp) startActualDownload(details *zlib.BookDetails, filePath, filena
 				log.Printf("Warning: failed to remove partially downloaded file '%s': %v\n", filePath, remErr)
 			}
 			// Send the error through the progress channel
-			progCh <- download.DownloadProgress{Current: writer.current, Total: writer.total, Err: fmt.Errorf("download interrupted: %w", copyErr)}
+			progCh <- download.DownloadProgress{Current: writer.Current, Total: writer.Total, Err: fmt.Errorf("download interrupted: %w", copyErr)}
 		} else {
 			log.Printf("Download successful, wrote %d bytes to %s\n", writtenBytes, filePath)
 			// Send final progress update indicating completion (error is nil)
 			// This ensures the receiver knows the download finished without copy errors.
-			progCh <- download.DownloadProgress{Current: writer.current, Total: writer.total, Err: nil}
+			progCh <- download.DownloadProgress{Current: writer.Current, Total: writer.Total, Err: nil}
 		}
 
 	}()
@@ -326,7 +327,6 @@ func (g *guiApp) startActualDownload(details *zlib.BookDetails, filePath, filena
 	// This part MUST run on the main Fyne goroutine to update UI widgets safely.
 	// We launch another goroutine to *read* from the channel and then update the UI.
 	go func() {
-		downloadComplete := false
 		var lastError error
 		var finalBytes int64
 		var totalBytes int64 = -1 // Initialize as unknown
@@ -356,7 +356,7 @@ func (g *guiApp) startActualDownload(details *zlib.BookDetails, filePath, filena
 
 			// Check if download seems complete based on bytes (only if total is known)
 			if totalBytes > 0 && finalBytes >= totalBytes {
-				downloadComplete = true
+
 				// Don't break here, wait for the channel to close or an explicit nil error
 				// to confirm the download goroutine finished cleanly.
 			}
