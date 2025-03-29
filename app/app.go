@@ -5,14 +5,11 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	// "fyne.io/fyne/v2/dialog" // Moved to handlers
-	// "fyne.io/fyne/v2/layout" // Moved to helpers
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-
-	// Adjust import path
-	zlib "The.Blackbook.Archive/zlibrary"
 	"sync" // Import sync package for Mutex
+
+	zlib "The.Blackbook.Archive/zlibrary" // Adjust import path
 )
 
 // AppName is the name of the application.
@@ -28,36 +25,35 @@ type guiApp struct {
 	searchButton     *widget.Button
 	resultsList      *widget.List
 	statusBar        *widget.Label
-	detailsArea      *fyne.Container // Container for detail widgets
+	detailsArea      *fyne.Container   // Container for detail widgets (content of the scroll)
+	detailsContainer *container.Scroll // Scrollable container for detailsArea
 	downloadButton   *widget.Button
 	progressBar      *widget.ProgressBar
 	coverImage       *canvas.Image
-	detailsContainer *container.Scroll // Scrollable container for detailsArea
 
 	// Data
-	searchResults []zlib.BookSearchResult // Use type from zlib package
-	selectedBook  *zlib.BookDetails       // Use type from zlib package
+	searchResults []zlib.BookSearchResult
+	selectedBook  *zlib.BookDetails
 	imageCache    map[string]fyne.Resource
-	cacheMutex    sync.RWMutex // Mutex to protect imageCache
+	cacheMutex    sync.RWMutex
 }
 
 // NewGuiApp creates and initializes a new GUI application instance.
 func NewGuiApp() *guiApp {
 	a := app.New()
-	// a.Settings().SetTheme(theme.DarkTheme()) // Optional: Set dark theme
+	a.Settings().SetTheme(theme.DarkTheme()) // Activate Dark Theme for improved look
 	w := a.NewWindow(AppName)
 
 	g := &guiApp{
 		fyneApp:    a,
 		mainWin:    w,
 		imageCache: make(map[string]fyne.Resource),
-		// Initialize other fields if necessary
 	}
 
-	g.setupUI() // Setup the UI elements
+	g.setupUI()
 
-	w.Resize(fyne.NewSize(900, 700)) // Slightly larger default size
-	w.SetMaster()                    // Declare this as the main window
+	w.Resize(fyne.NewSize(950, 750)) // Slightly larger default size again
+	w.SetMaster()
 
 	return g
 }
@@ -67,90 +63,83 @@ func (g *guiApp) setupUI() {
 	// --- Search Bar ---
 	g.searchEntry = widget.NewEntry()
 	g.searchEntry.SetPlaceHolder("Enter book title or author...")
-	g.searchEntry.OnSubmitted = g.performSearch // Use handler function
+	g.searchEntry.OnSubmitted = g.performSearch
 	g.searchButton = widget.NewButtonWithIcon("Search", theme.SearchIcon(), func() {
-		g.performSearch(g.searchEntry.Text) // Use handler function
+		g.performSearch(g.searchEntry.Text)
 	})
-	// Use container.NewBorder for better layout control
 	searchBox := container.NewBorder(nil, nil, nil, g.searchButton, g.searchEntry)
 
 	// --- Status Bar ---
 	g.statusBar = widget.NewLabel("Enter a search query and press Search.")
-	g.statusBar.Wrapping = fyne.TextTruncate // Prevent long status from wrapping badly
+	g.statusBar.Wrapping = fyne.TextTruncate
 
 	// --- Results List ---
 	g.resultsList = widget.NewList(
 		func() int {
-			return len(g.searchResults) // Get length from app state
+			return len(g.searchResults)
 		},
 		func() fyne.CanvasObject {
-			// Use a more descriptive template if needed, maybe include subtitle space
-			return widget.NewLabel("Template Book Title")
+			// Using a slightly richer template label for better spacing potential
+			return container.NewPadded(widget.NewLabel("Template Book Title"))
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			// Safely access searchResults
 			if id < len(g.searchResults) {
-				item.(*widget.Label).SetText(g.searchResults[id].Title)
+				// Access the label within the padded container
+				item.(*fyne.Container).Objects[0].(*widget.Label).SetText(g.searchResults[id].Title)
 			}
 		},
 	)
 	g.resultsList.OnSelected = func(id widget.ListItemID) {
-		// Safely access searchResults
 		if id < len(g.searchResults) {
-			g.fetchAndDisplayDetails(g.searchResults[id].URL) // Use handler
+			g.fetchAndDisplayDetails(g.searchResults[id].URL)
 		}
 	}
-	// Add placeholder when list is empty?
-	// resultsPlaceholder := widget.NewLabel("No search results")
-	// resultsContainer := container.NewMax(g.resultsList, resultsPlaceholder) // Manage visibility
 
-	// --- Details Area ---
+	// --- Details Area Structure (Right Panel Content) ---
 	g.coverImage = canvas.NewImageFromResource(nil) // Start empty
 	g.coverImage.FillMode = canvas.ImageFillContain
-	g.coverImage.SetMinSize(fyne.NewSize(150, 200)) // Minimum size for the cover
+	g.coverImage.SetMinSize(fyne.NewSize(180, 240)) // Slightly larger min size for cover
 
-	// Container to hold the actual detail widgets (like the Form)
+	// Container to hold the actual detail widgets (e.g., the Form)
 	g.detailsArea = container.NewVBox(widget.NewLabel("Select a book from the results to see details."))
 	// Make the detailsArea scrollable
 	g.detailsContainer = container.NewScroll(g.detailsArea)
-
-	// Left pane: Cover image centered
-	detailsLeftPane := container.NewCenter(g.coverImage)
-	// Right pane: Scrollable details
-	detailsRightPane := g.detailsContainer
-
-	// Split container for cover and details
-	detailsSplit := container.NewHSplit(detailsLeftPane, detailsRightPane)
-	detailsSplit.SetOffset(0.25) // Adjust initial split ratio (25% for cover)
+	// Optional: Set a minimum height for the scroll container if needed
+	// g.detailsContainer.SetMinSize(fyne.NewSize(0, 300))
 
 	// --- Download Section ---
-	g.downloadButton = widget.NewButtonWithIcon("Download", theme.DownloadIcon(), g.performDownload) // Use handler
-	g.downloadButton.Disable()                                                                       // Start disabled
-
+	g.downloadButton = widget.NewButtonWithIcon("Download", theme.DownloadIcon(), g.performDownload)
+	g.downloadButton.Disable()
 	g.progressBar = widget.NewProgressBar()
-	g.progressBar.Hide() // Start hidden
-
+	g.progressBar.Hide()
 	downloadArea := container.NewVBox(g.downloadButton, g.progressBar)
 
 	// --- Main Layout ---
-	// Left side: Results list
-	leftPanel := container.NewBorder(nil, nil, nil, nil, g.resultsList)
+	// Left side: Results list (Padded for better spacing)
+	leftPanel := container.NewPadded(g.resultsList)
 
-	// Right side: Details split view (cover/info) on top, download area below
-	rightPanel := container.NewBorder(nil, downloadArea, nil, nil, detailsSplit)
+	// Right side: Cover image top, details center (scrollable), download bottom
+	rightPanel := container.NewBorder(
+		container.NewCenter(g.coverImage), // Center the cover image at the top
+		downloadArea,                      // Download area at the bottom
+		nil,                               // No left element
+		nil,                               // No right element
+		g.detailsContainer,                // Scrollable details take the central space
+	)
 
 	// Main horizontal split
 	mainSplit := container.NewHSplit(leftPanel, rightPanel)
 	mainSplit.SetOffset(0.35) // Adjust initial split (35% for results list)
 
 	// Overall window content: Search bar top, status bar bottom, main split in center
-	content := container.NewBorder(searchBox, g.statusBar, nil, nil, mainSplit)
+	// Add padding around the main content area for better spacing from window edges
+	content := container.NewPadded(container.NewBorder(searchBox, g.statusBar, nil, nil, mainSplit))
 
 	g.mainWin.SetContent(content)
 }
 
 // Run starts the Fyne application event loop.
 func (g *guiApp) Run() {
-	g.mainWin.Show() // Show the window first
-	g.fyneApp.Run()  // Then run the application loop
+	g.mainWin.Show()
+	g.fyneApp.Run()
 }
