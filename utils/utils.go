@@ -62,3 +62,14 @@ func MinInt(a, b int) int {
 	}
 	return b
 }
+
+// In utils package
+func DerefStringOrDefault(s *string, def string) string {
+	if s != nil {
+		return *s
+	}
+	return def
+}
+func DerefString(s *string) string {
+	return DerefStringOrDefault(s, "") // Or "<nil>" etc.
+}
